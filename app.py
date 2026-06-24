@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request
 
 from database import fetch_log, init_db, insert_submission
 from signals.groq_classifier import classify as groq_classify
+from signals.stylometrics import classify as stylo_classify
 
 load_dotenv()
 
@@ -51,15 +52,19 @@ def submit():
     if not text:
         return jsonify({"error": "'text' must not be empty."}), 400
 
-    # --- Signal 1: Groq LLM ---
+    # --- Signal 1: Groq LLM (semantic) ---
     try:
         groq_result = groq_classify(text)
         signal1_score = groq_result["score"]
     except Exception as e:
         return jsonify({"error": f"Signal 1 (Groq) failed: {str(e)}"}), 502
 
-    # Combined score is just Signal 1 for now (Signal 2 added in Phase 3)
-    combined_score = signal1_score
+    # --- Signal 2: Stylometric heuristics (structural) ---
+    stylo_result = stylo_classify(text)
+    signal2_score = stylo_result["score"]
+
+    # Combined score: equal-weighted average of both signals
+    combined_score = round((signal1_score + signal2_score) / 2.0, 4)
     attribution, label_text = _attribution_label(combined_score)
 
     content_id = str(uuid.uuid4())
@@ -69,6 +74,7 @@ def submit():
         "creator_id": creator_id,
         "text": text,
         "signal1_score": signal1_score,
+        "signal2_score": signal2_score,
         "combined_score": combined_score,
         "attribution": attribution,
         "label": label_text,
@@ -78,10 +84,12 @@ def submit():
     return jsonify({
         "content_id": content_id,
         "attribution": attribution,
-        "confidence_score": round(combined_score, 4),
+        "confidence_score": combined_score,
         "transparency_label": label_text,
         "signals": {
             "groq_llm": round(signal1_score, 4),
+            "stylometrics": round(signal2_score, 4),
+            "stylometrics_detail": stylo_result["details"],
         },
     }), 200
 

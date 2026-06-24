@@ -80,10 +80,20 @@ POST /appeal → Status Update ("under_review") → Audit Log → JSON Response
 ## AI Tool Plan
 
 **M3 (Submission Endpoint + First Signal):**
-I will provide the Detection Signals section and Architecture diagram to an AI tool to generate a Flask app skeleton containing the `POST /submit` route and the Groq LLM signal function. I will verify it by testing the signal function independently with sample texts.
+I provided the Detection Signals section and Architecture diagram to an AI tool to generate a Flask app skeleton containing the `POST /submit` route and the Groq LLM signal function. Verified by running two test submissions:
+- AI-sounding text → `confidence_score: 0.8`, attribution: `"AI-generated"` ✓
+- Casual human text → `confidence_score: 0.2`, attribution: `"Human-written"` ✓
 
 **M4 (Second Signal + Confidence Scoring):**
-I will provide the Uncertainty Representation section to generate the stylometric heuristic function and the averaging logic. I will verify it by testing a clearly AI-generated paragraph and a clearly human-written paragraph to ensure meaningful score variation.
+I will provide the Uncertainty Representation section to generate the stylometric heuristic function (sentence length variance + type-token ratio) and the averaging logic. I will verify it by testing a clearly AI-generated paragraph and a clearly human-written paragraph to ensure meaningful score variation across both signals.
 
 **M5 (Production Layer):**
-I will provide the Appeals Workflow and Transparency Labels to generate the label mapping, `POST /appeal` endpoint, and Flask-Limiter integration. I will verify by running curl commands to reach all label variants and confirm the rate limit 429 response.
+I will provide the Appeals Workflow and Transparency Labels to generate the label mapping, `POST /appeal` endpoint, and Flask-Limiter integration. I will verify by running PowerShell `Invoke-RestMethod` commands to reach all label variants and confirm the rate limit 429 response.
+
+---
+
+## Appeals Workflow — Additional Fields
+
+Beyond the required `content_id` and `creator_reasoning`, the `/appeal` endpoint also captures:
+- `appeal_type`: categorizes the appeal as `false_positive` or `technical_error`
+- `contact_email`: allows a human reviewer to follow up with the creator directly
