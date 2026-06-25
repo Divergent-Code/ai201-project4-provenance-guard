@@ -5,7 +5,7 @@ from flask import Flask, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from database import fetch_log, fetch_submission, init_db, insert_submission, update_appeal
+from database import fetch_analytics, fetch_log, fetch_submission, init_db, insert_submission, update_appeal
 from signals.groq_classifier import classify as groq_classify
 from signals.punctuation import classify as punct_classify
 from signals.stylometrics import classify as stylo_classify
@@ -145,6 +145,11 @@ def appeal():
         "status": "under_review",
         "appeal_type": appeal_type,
     }), 200
+
+
+@app.route("/analytics", methods=["GET"])
+def get_analytics():
+    return jsonify(fetch_analytics()), 200
 
 
 @app.route("/log", methods=["GET"])

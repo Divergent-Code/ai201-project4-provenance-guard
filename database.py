@@ -83,6 +83,45 @@ def fetch_log(limit: int = 50):
     return [dict(r) for r in rows]
 
 
+def fetch_analytics() -> dict:
+    conn = get_db()
+    row = conn.execute("""
+        SELECT
+            COUNT(*) AS total,
+            AVG(combined_score) AS avg_combined,
+            AVG(signal1_score)  AS avg_signal1,
+            AVG(signal2_score)  AS avg_signal2,
+            AVG(signal3_score)  AS avg_signal3,
+            COUNT(CASE WHEN attribution = 'AI-generated'  THEN 1 END) AS ai_count,
+            COUNT(CASE WHEN attribution = 'Uncertain'     THEN 1 END) AS uncertain_count,
+            COUNT(CASE WHEN attribution = 'Human-written' THEN 1 END) AS human_count,
+            COUNT(CASE WHEN status = 'under_review'       THEN 1 END) AS appeal_count
+        FROM submissions
+    """).fetchone()
+    conn.close()
+
+    total = row["total"] or 0
+    pct = lambda n: round(n / total * 100, 1) if total else 0.0
+    rnd = lambda v: round(v, 4) if v is not None else None
+
+    return {
+        "total_submissions": total,
+        "average_confidence_score": rnd(row["avg_combined"]),
+        "signal_averages": {
+            "groq_llm":     rnd(row["avg_signal1"]),
+            "stylometrics": rnd(row["avg_signal2"]),
+            "punctuation":  rnd(row["avg_signal3"]),
+        },
+        "label_distribution": {
+            "AI-generated":  {"count": row["ai_count"],       "pct": pct(row["ai_count"])},
+            "Uncertain":     {"count": row["uncertain_count"], "pct": pct(row["uncertain_count"])},
+            "Human-written": {"count": row["human_count"],    "pct": pct(row["human_count"])},
+        },
+        "appeal_count": row["appeal_count"],
+        "appeal_rate_pct": pct(row["appeal_count"]),
+    }
+
+
 def fetch_submission(content_id: str):
     conn = get_db()
     row = conn.execute(

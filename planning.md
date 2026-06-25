@@ -101,6 +101,26 @@ I will provide the Appeals Workflow and Transparency Labels to generate the labe
 
 ---
 
+## Analytics Dashboard (Stretch Goal)
+
+**Endpoint:** `GET /analytics`
+
+**What it returns:**
+Aggregate statistics computed live from the audit log — no separate store needed.
+
+| Field | Description |
+|-------|-------------|
+| `total_submissions` | Count of all records in the audit log |
+| `label_distribution` | Count + percentage for each attribution label |
+| `average_confidence_score` | Mean `combined_score` across all submissions |
+| `signal_averages` | Mean score for each of the three signals |
+| `appeal_count` | Number of submissions currently under review |
+| `appeal_rate_pct` | `appeal_count / total_submissions * 100` |
+
+All values computed with SQLite aggregate functions — no additional dependency.
+
+---
+
 ## Appeals Workflow — Additional Fields
 
 Beyond the required `content_id` and `creator_reasoning`, the `/appeal` endpoint also captures:
