@@ -2,8 +2,10 @@ import uuid
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
-from database import fetch_log, init_db, insert_submission
+from database import fetch_log, fetch_submission, init_db, insert_submission, update_appeal
 from signals.groq_classifier import classify as groq_classify
 from signals.stylometrics import classify as stylo_classify
 
@@ -11,6 +13,13 @@ load_dotenv()
 
 app = Flask(__name__)
 init_db()
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +50,7 @@ def _attribution_label(score: float) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 @app.route("/submit", methods=["POST"])
+@limiter.limit("10 per minute; 100 per day")
 def submit():
     data = request.get_json(silent=True)
     if not data or "text" not in data or "creator_id" not in data:
@@ -94,11 +104,54 @@ def submit():
     }), 200
 
 
+@app.route("/appeal", methods=["POST"])
+def appeal():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body required."}), 400
+
+    content_id = data.get("content_id", "").strip()
+    creator_reasoning = data.get("creator_reasoning", "").strip()
+
+    if not content_id or not creator_reasoning:
+        return jsonify({"error": "Both 'content_id' and 'creator_reasoning' are required."}), 400
+
+    appeal_type = data.get("appeal_type", "false_positive").strip()
+    contact_email = data.get("contact_email", "").strip()
+
+    if appeal_type not in ("false_positive", "technical_error"):
+        return jsonify({"error": "'appeal_type' must be 'false_positive' or 'technical_error'."}), 400
+
+    submission = fetch_submission(content_id)
+    if not submission:
+        return jsonify({"error": f"No submission found for content_id '{content_id}'."}), 404
+
+    if submission["status"] == "under_review":
+        return jsonify({"error": "An appeal for this content is already under review."}), 409
+
+    update_appeal(content_id, creator_reasoning, appeal_type, contact_email)
+
+    return jsonify({
+        "message": "Appeal received. Your content has been flagged for human review.",
+        "content_id": content_id,
+        "status": "under_review",
+        "appeal_type": appeal_type,
+    }), 200
+
+
 @app.route("/log", methods=["GET"])
 def get_log():
     limit = request.args.get("limit", 50, type=int)
     entries = fetch_log(limit=limit)
     return jsonify({"count": len(entries), "entries": entries}), 200
+
+
+@app.errorhandler(429)
+def rate_limit_exceeded(e):
+    return jsonify({
+        "error": "Rate limit exceeded. You may submit up to 10 pieces of content per minute and 100 per day.",
+        "retry_after": str(e.description),
+    }), 429
 
 
 # ---------------------------------------------------------------------------
