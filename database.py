@@ -29,9 +29,12 @@ def init_db():
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Migration: add signal2_score if upgrading from Phase 2 database
     try:
         conn.execute("ALTER TABLE submissions ADD COLUMN signal2_score REAL")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE submissions ADD COLUMN signal3_score REAL")
     except Exception:
         pass
     conn.commit()
@@ -42,11 +45,11 @@ def insert_submission(record: dict):
     conn = get_db()
     conn.execute("""
         INSERT INTO submissions
-            (id, creator_id, text, signal1_score, signal2_score, combined_score,
-             attribution, label, status)
+            (id, creator_id, text, signal1_score, signal2_score, signal3_score,
+             combined_score, attribution, label, status)
         VALUES
-            (:id, :creator_id, :text, :signal1_score, :signal2_score, :combined_score,
-             :attribution, :label, :status)
+            (:id, :creator_id, :text, :signal1_score, :signal2_score, :signal3_score,
+             :combined_score, :attribution, :label, :status)
     """, record)
     conn.commit()
     conn.close()
@@ -69,8 +72,8 @@ def update_appeal(content_id: str, reasoning: str, appeal_type: str, contact_ema
 def fetch_log(limit: int = 50):
     conn = get_db()
     rows = conn.execute("""
-        SELECT id, creator_id, signal1_score, signal2_score, combined_score,
-               attribution, label, status,
+        SELECT id, creator_id, signal1_score, signal2_score, signal3_score,
+               combined_score, attribution, label, status,
                appeal_reasoning, appeal_type, contact_email, created_at
         FROM submissions
         ORDER BY created_at DESC

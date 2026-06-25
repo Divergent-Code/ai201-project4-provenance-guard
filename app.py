@@ -7,6 +7,7 @@ from flask_limiter.util import get_remote_address
 
 from database import fetch_log, fetch_submission, init_db, insert_submission, update_appeal
 from signals.groq_classifier import classify as groq_classify
+from signals.punctuation import classify as punct_classify
 from signals.stylometrics import classify as stylo_classify
 
 load_dotenv()
@@ -73,8 +74,12 @@ def submit():
     stylo_result = stylo_classify(text)
     signal2_score = stylo_result["score"]
 
-    # Combined score: equal-weighted average of both signals
-    combined_score = round((signal1_score + signal2_score) / 2.0, 4)
+    # --- Signal 3: Punctuation & transition patterns ---
+    punct_result = punct_classify(text)
+    signal3_score = punct_result["score"]
+
+    # Combined score: equal-weighted average of all three signals
+    combined_score = round((signal1_score + signal2_score + signal3_score) / 3.0, 4)
     attribution, label_text = _attribution_label(combined_score)
 
     content_id = str(uuid.uuid4())
@@ -85,6 +90,7 @@ def submit():
         "text": text,
         "signal1_score": signal1_score,
         "signal2_score": signal2_score,
+        "signal3_score": signal3_score,
         "combined_score": combined_score,
         "attribution": attribution,
         "label": label_text,
@@ -100,6 +106,8 @@ def submit():
             "groq_llm": round(signal1_score, 4),
             "stylometrics": round(signal2_score, 4),
             "stylometrics_detail": stylo_result["details"],
+            "punctuation": round(signal3_score, 4),
+            "punctuation_detail": punct_result["details"],
         },
     }), 200
 

@@ -13,11 +13,20 @@ This signal captures semantic and stylistic coherence holistically by asking the
 **Signal 2: Stylometric Heuristics:**
 This signal measures structural and statistical properties of the text. We compute sentence length variance and type-token ratio (vocabulary diversity). Output is a normalized score between 0.0 and 1.0.
 
+**Signal 3: Punctuation & Transition Patterns (Stretch — Ensemble Detection):**
+This signal measures two surface-level patterns that AI models produce reliably:
+
+1. **Transition phrase density** — AI text frequently uses discourse connectives ("however", "therefore", "furthermore", "moreover", "consequently", "notably", etc.) at higher rates than human writing. Measured as transition words per sentence, normalized to [0, 1] (capped at 0.5 per sentence = score 1.0).
+
+2. **Comma consistency** — AI text applies commas with metronomic regularity. We compute the coefficient of variation (std / mean) of comma counts across sentences; low variation → high AI score. Returns 0.5 when fewer than 2 sentences or mean comma count is 0.
+
+Both sub-signals are normalized to [0.0, 1.0] and averaged into Signal 3's final score.
+
 **Combination Logic:**
-The two signal scores will be averaged to produce a single, unified confidence score between 0.0 and 1.0.
+All three signal scores are averaged (equal weight) to produce a single, unified confidence score between 0.0 and 1.0.
 
 **What do these signals miss?**
-The LLM signal may incorrectly flag highly formal or formulaic human writing (e.g., legal texts) as AI. The stylometric signal may incorrectly flag human writing that has been heavily edited for uniformity or brevity.
+The LLM signal may incorrectly flag highly formal or formulaic human writing (e.g., legal texts) as AI. The stylometric signal may incorrectly flag human writing that has been heavily edited for uniformity or brevity. The punctuation signal may over-flag academic human writing that also uses many transition words.
 
 ---
 
