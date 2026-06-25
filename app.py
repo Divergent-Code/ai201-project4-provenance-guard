@@ -64,11 +64,13 @@ def submit():
         return jsonify({"error": "'text' must not be empty."}), 400
 
     # --- Signal 1: Groq LLM (semantic) ---
+    groq_degraded = False
     try:
         groq_result = groq_classify(text)
         signal1_score = groq_result["score"]
-    except Exception as e:
-        return jsonify({"error": f"Signal 1 (Groq) failed: {str(e)}"}), 502
+    except Exception:
+        signal1_score = 0.5
+        groq_degraded = True
 
     # --- Signal 2: Stylometric heuristics (structural) ---
     stylo_result = stylo_classify(text)
@@ -97,7 +99,7 @@ def submit():
         "status": "reviewed",
     })
 
-    return jsonify({
+    response = {
         "content_id": content_id,
         "attribution": attribution,
         "confidence_score": combined_score,
@@ -109,7 +111,10 @@ def submit():
             "punctuation": round(signal3_score, 4),
             "punctuation_detail": punct_result["details"],
         },
-    }), 200
+    }
+    if groq_degraded:
+        response["warning"] = "Signal 1 (Groq) unavailable. Score computed from stylometric and punctuation signals only; groq_llm defaulted to 0.5."
+    return jsonify(response), 200
 
 
 @app.route("/appeal", methods=["POST"])

@@ -10,6 +10,28 @@ There are no wrong answers — write enough that you could explain your reasonin
 **Signal 1: Groq LLM (`llama-3.3-70b-versatile`):**
 This signal captures semantic and stylistic coherence holistically by asking the model to assess whether the text reads as human or AI-generated. Output is a score between 0.0 and 1.0.
 
+Exact system prompt used:
+```
+You are an expert at distinguishing human-written text from AI-generated text.
+
+Analyze the provided text and return ONLY a JSON object with this exact structure:
+{
+  "score": <float between 0.0 and 1.0>,
+  "reasoning": "<one sentence>"
+}
+
+Where score means:
+- 0.0 = definitely human-written
+- 1.0 = definitely AI-generated
+- 0.5 = completely ambiguous
+
+Focus on: semantic coherence uniformity, formulaic phrasing, unnatural consistency,
+absence of personal voice, hedging language patterns, and structural repetition.
+Do not include any text outside the JSON object.
+```
+
+`temperature=0.1` is used for scoring consistency. If the Groq API is unavailable, this signal **fails closed** to `0.5` (neutral/uncertain) so the submission can still be processed using Signals 2 and 3. A `"warning"` field is added to the response when this fallback is active.
+
 **Signal 2: Stylometric Heuristics:**
 This signal measures structural and statistical properties of the text. We compute sentence length variance and type-token ratio (vocabulary diversity). Output is a normalized score between 0.0 and 1.0.
 
@@ -24,6 +46,23 @@ Both sub-signals are normalized to [0.0, 1.0] and averaged into Signal 3's final
 
 **Combination Logic:**
 All three signal scores are averaged (equal weight) to produce a single, unified confidence score between 0.0 and 1.0.
+
+**Why three independent signals?**
+Each signal operates on a different dimension of the text:
+- Signal 1 reads *meaning and voice* (semantic layer)
+- Signal 2 reads *word and sentence statistics* (structural layer)
+- Signal 3 reads *punctuation and discourse patterns* (surface layer)
+
+Because they measure different properties, they are unlikely to fail in the same direction at the same time. A text that fools the LLM with natural-sounding phrasing will still show low sentence-length variance and high transition-word density if it was AI-generated. Equal weighting reflects the absence of evidence that any one signal is more reliable than the others.
+
+**Boundary rules and known failure modes:**
+
+| Input type | Likely failure | Why |
+|---|---|---|
+| Formal academic human writing | False positive (scored AI) | High transition density + uniform sentence structure matches AI patterns |
+| Lightly edited AI output | Uncertain (mid-range) | LLM detects AI traces; stylometrics sees human edits → signals disagree |
+| Short text (< 2 sentences) | Signal 2 returns 0.5 | Cannot compute sentence variance; defaults to neutral |
+| Highly repetitive poetry | False positive | Low vocabulary diversity + uniform line length |
 
 **What do these signals miss?**
 The LLM signal may incorrectly flag highly formal or formulaic human writing (e.g., legal texts) as AI. The stylometric signal may incorrectly flag human writing that has been heavily edited for uniformity or brevity. The punctuation signal may over-flag academic human writing that also uses many transition words.
@@ -73,15 +112,29 @@ The original text, the individual signal scores, the combined confidence score, 
 ## Architecture
 
 **Narrative:**
-When a piece of text is submitted via `POST /submit`, it is processed through the Groq LLM and Stylometric Heuristics signals. Both return independent scores, averaged into a single confidence score. This score maps to a transparency label ("Likely AI-generated", "Uncertain origin", or "Likely human-written"). The decision is saved to an SQLite Audit Log before returning the response. If a creator contests the label via `POST /appeal`, the system locates the submission in the Audit Log, updates its status to "under_review", and appends the reasoning.
+When a piece of text is submitted via `POST /submit`, it is processed through all three signals in sequence. Signals 2 and 3 are pure Python and never fail. Signal 1 (Groq) fails closed to a neutral score of 0.5 if the API is unavailable, so the system always produces a result. The three scores are averaged into a single confidence score, mapped to a transparency label, and saved to the SQLite audit log. If a creator contests the label via `POST /appeal`, the system updates the record's status to "under_review" and appends the reasoning for human review.
 
 **Diagram:**
 ```text
 [Submission Flow]
-POST /submit → Groq LLM & Stylometrics → Confidence Scoring → Label Mapping → Audit Log → JSON Response
+POST /submit
+  ├─ Signal 1: Groq LLM          (fails closed → 0.5 if API unavailable)
+  ├─ Signal 2: Stylometrics      (pure Python, always returns)
+  └─ Signal 3: Punctuation       (pure Python, always returns)
+        ↓
+  Equal-weighted average → confidence score
+        ↓
+  Label mapping → transparency label
+        ↓
+  SQLite audit log → JSON response
 
 [Appeal Flow]
-POST /appeal → Status Update ("under_review") → Audit Log → JSON Response
+POST /appeal → Lookup → Status: "under_review" → Audit Log → JSON response
+
+[Read-only]
+GET /log         → full audit log (newest first)
+GET /analytics   → aggregate statistics
+GET /certificate → single-submission provenance document
 ```
 
 ---
@@ -152,3 +205,29 @@ All values computed with SQLite aggregate functions — no additional dependency
 Beyond the required `content_id` and `creator_reasoning`, the `/appeal` endpoint also captures:
 - `appeal_type`: categorizes the appeal as `false_positive` or `technical_error`
 - `contact_email`: allows a human reviewer to follow up with the creator directly
+
+---
+
+## Implementation Notes
+
+**Signal disagreement examples (observed during testing):**
+
+| Input | groq_llm | stylometrics | punctuation | combined | Label |
+|---|---|---|---|---|---|
+| Dense transition-word AI paragraph | 0.90 | 0.44 | 1.00 | 0.78 | AI-generated |
+| Casual sourdough story | 0.20 | 0.51 | 0.25 | 0.32 | Uncertain |
+| Formal human writing (non-native speaker) | 0.80 | 0.42 | — | 0.61 | Uncertain |
+| Short casual human text | 0.20 | 0.40 | — | 0.20 | Human-written |
+
+**What surprised us during testing:**
+
+1. *Signal independence confirmed by disagreement.* The AI-sounding governance paragraph scored `groq_llm=0.9` but only `stylometrics=0.44`. This is the correct behavior — stylometrics correctly detected vocabulary diversity in the long passage that pulled the score down. The combined score of 0.78 is more conservative than the LLM alone would produce.
+
+2. *Short texts default to Uncertain.* A casual 4-sentence human text scored `stylometrics=0.51` because too-few sentences prevent meaningful variance computation (returns 0.5). The fallback is intentionally neutral — it avoids confident misclassification on thin evidence.
+
+3. *False positives on formal writing.* A submission from a non-native English speaker writing in formal style scored `groq_llm=0.8` despite being human-written. This is the documented limitation of Signal 1 and the primary motivation for having an appeals workflow. The confidence score (0.61) correctly landed in "Uncertain" rather than "AI-generated", demonstrating the asymmetric threshold design (>0.70 required for the stronger label).
+
+4. *Rate limit fires correctly.* With 10 requests per minute enforced, the 10th in-window request triggers 429. Earlier requests in the same minute count toward the limit, which is the expected behavior — the window is sliding, not per-batch.
+
+**Why asymmetric thresholds?**
+Falsely accusing a human writer is a worse outcome than failing to detect AI-generated text. We therefore require a score above 0.70 (not just above 0.50) before issuing the "AI-generated" label. The 0.30–0.70 "Uncertain" band is intentionally wide — the system communicates genuine ambiguity rather than forcing a binary verdict when evidence is mixed.
