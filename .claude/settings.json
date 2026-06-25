@@ -3,7 +3,9 @@
     "allow": [
       "Bash(pip install *)",
       "PowerShell(python --version)",
-      "PowerShell(python -m pip --version)"
+      "PowerShell(python -m pip --version)",
+      "Bash(find \"C:/Users/onika/Programming/CodePath/ai201-lab4-repairsafe-starter\" -type f -name \"*.ts\" -o -name \"*.tsx\" | head -20)",
+      "Read(//c/Users/onika/Programming/CodePath/ai201-lab4-repairsafe-starter/**)"
     ]
   }
 }

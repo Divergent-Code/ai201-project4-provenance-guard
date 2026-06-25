@@ -101,6 +101,32 @@ I will provide the Appeals Workflow and Transparency Labels to generate the labe
 
 ---
 
+## Provenance Certificate (Stretch Goal)
+
+**Endpoint:** `GET /certificate/<content_id>`
+
+**Purpose:**
+Returns a self-contained, shareable document that summarizes the full classification record for a single submission. A creator can present this as evidence of the system's decision — including the signals used, the confidence score, and the issued label — or a reviewer can use it to audit the decision.
+
+**What it contains:**
+
+| Field | Description |
+|-------|-------------|
+| `certificate_id` | Same as `content_id` — globally unique identifier for this record |
+| `issued_at` | Timestamp from the original submission (`created_at`) |
+| `creator_id` | Submitted creator identifier |
+| `status` | Current review status (`reviewed` or `under_review`) |
+| `verdict.attribution` | Final attribution label |
+| `verdict.confidence_score` | Combined score across all signals |
+| `verdict.transparency_label` | Human-readable label text |
+| `signals` | Individual scores for groq_llm, stylometrics, and punctuation |
+| `appeal` | Appeal fields if the record has been contested, otherwise `null` |
+
+**Design note:**
+No new database tables or columns are required. The certificate is assembled at request time from the existing `submissions` row.
+
+---
+
 ## Analytics Dashboard (Stretch Goal)
 
 **Endpoint:** `GET /analytics`

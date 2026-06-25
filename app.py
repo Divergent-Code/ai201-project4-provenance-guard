@@ -152,6 +152,41 @@ def get_analytics():
     return jsonify(fetch_analytics()), 200
 
 
+@app.route("/certificate/<content_id>", methods=["GET"])
+def get_certificate(content_id):
+    submission = fetch_submission(content_id)
+    if not submission:
+        return jsonify({"error": f"No submission found for content_id '{content_id}'."}), 404
+
+    appeal = None
+    if submission["status"] == "under_review":
+        appeal = {
+            "appeal_type": submission["appeal_type"],
+            "creator_reasoning": submission["appeal_reasoning"],
+            "contact_email": submission["contact_email"],
+        }
+
+    certificate = {
+        "certificate_id": submission["id"],
+        "issued_at": submission["created_at"],
+        "creator_id": submission["creator_id"],
+        "status": submission["status"],
+        "verdict": {
+            "attribution": submission["attribution"],
+            "confidence_score": submission["combined_score"],
+            "transparency_label": submission["label"],
+        },
+        "signals": {
+            "groq_llm": submission["signal1_score"],
+            "stylometrics": submission["signal2_score"],
+            "punctuation": submission["signal3_score"],
+        },
+        "appeal": appeal,
+    }
+
+    return jsonify(certificate), 200
+
+
 @app.route("/log", methods=["GET"])
 def get_log():
     limit = request.args.get("limit", 50, type=int)
