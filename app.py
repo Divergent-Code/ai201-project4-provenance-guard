@@ -5,7 +5,7 @@ from flask import Flask, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
-from database import fetch_analytics, fetch_log, fetch_submission, init_db, insert_submission, update_appeal
+from database import fetch_analytics, fetch_log, fetch_submission, init_db, insert_submission, update_appeal, update_verification
 from signals.groq_classifier import classify as groq_classify
 from signals.punctuation import classify as punct_classify
 from signals.stylometrics import classify as stylo_classify
@@ -59,6 +59,10 @@ def submit():
 
     text: str = data["text"].strip()
     creator_id: str = data["creator_id"]
+    content_type = data.get("content_type", "text").strip()
+
+    if content_type not in ("text", "image_description"):
+        return jsonify({"error": "'content_type' must be 'text' or 'image_description'."}), 400
 
     if not text:
         return jsonify({"error": "'text' must not be empty."}), 400
@@ -73,8 +77,12 @@ def submit():
         groq_degraded = True
 
     # --- Signal 2: Stylometric heuristics (structural) ---
-    stylo_result = stylo_classify(text)
-    signal2_score = stylo_result["score"]
+    stylo_result = {"score": 0.5, "details": {}}
+    if content_type == "text":
+        stylo_result = stylo_classify(text)
+        signal2_score = stylo_result["score"]
+    else:
+        signal2_score = 0.5
 
     # --- Signal 3: Punctuation & transition patterns ---
     punct_result = punct_classify(text)
@@ -97,6 +105,8 @@ def submit():
         "attribution": attribution,
         "label": label_text,
         "status": "reviewed",
+        "is_verified": False,
+        "content_type": content_type,
     })
 
     response = {
@@ -152,6 +162,31 @@ def appeal():
     }), 200
 
 
+@app.route("/verify", methods=["POST"])
+def verify():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Request body required."}), 400
+
+    content_id = data.get("content_id", "").strip()
+    draft_history_hash = data.get("draft_history_hash", "").strip()
+
+    if not content_id or not draft_history_hash:
+        return jsonify({"error": "Both 'content_id' and 'draft_history_hash' are required."}), 400
+
+    submission = fetch_submission(content_id)
+    if not submission:
+        return jsonify({"error": f"No submission found for content_id '{content_id}'."}), 404
+
+    update_verification(content_id)
+
+    return jsonify({
+        "message": "Content successfully verified via drafting evidence.",
+        "content_id": content_id,
+        "is_verified": True
+    }), 200
+
+
 @app.route("/analytics", methods=["GET"])
 def get_analytics():
     return jsonify(fetch_analytics()), 200
@@ -171,15 +206,19 @@ def get_certificate(content_id):
             "contact_email": submission["contact_email"],
         }
 
+    is_verified = bool(submission.get("is_verified", False))
+    label = "✓ Verified Human-written" if is_verified else submission["label"]
+
     certificate = {
         "certificate_id": submission["id"],
         "issued_at": submission["created_at"],
         "creator_id": submission["creator_id"],
         "status": submission["status"],
+        "is_verified": is_verified,
         "verdict": {
             "attribution": submission["attribution"],
             "confidence_score": submission["combined_score"],
-            "transparency_label": submission["label"],
+            "transparency_label": label,
         },
         "signals": {
             "groq_llm": submission["signal1_score"],

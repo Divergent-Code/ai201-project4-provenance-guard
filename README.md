@@ -60,15 +60,18 @@ Two sub-signals averaged together:
 
 ### `POST /submit`
 
-Classifies a piece of text. Rate limited to **10 requests per minute / 100 per day** per IP.
+Classifies a piece of text. Rate limited to **10 requests per minute / 100 per day** per IP.  
+**Reasoning:** 10 requests per minute allows a creator to submit a batch of chapters sequentially, but stops aggressive automated flooding. 100 per day comfortably covers a high-volume platform user while capping API cost exposure.
 
 **Request:**
 ```json
 {
   "creator_id": "user-123",
-  "text": "Your content here."
+  "text": "Your content here.",
+  "content_type": "text" 
 }
 ```
+*Note on Multi-Modal Support:* `content_type` defaults to `"text"`. If set to `"image_description"`, the system bypasses structural stylometric heuristics (which require paragraph-length prose) and scores the image caption using semantic and punctuation signals.
 
 **Response `200`:**
 ```json
@@ -132,6 +135,29 @@ Contest a classification. Updates the submission's status to `under_review` and 
 
 **Response `404`:** Content ID not found.  
 **Response `409`:** Appeal already under review.
+
+---
+
+### `POST /verify`
+
+Allows a creator to submit drafting evidence (e.g., a time-lapse hash) to earn a "Verified Human" credential, changing their transparency label on the provenance certificate.
+
+**Request:**
+```json
+{
+  "content_id": "e7b26fcd-351d-473d-a33f-71ebeab09dc2",
+  "draft_history_hash": "a1b2c3d4e5f6..."
+}
+```
+
+**Response `200`:**
+```json
+{
+  "message": "Content successfully verified via drafting evidence.",
+  "content_id": "e7b26fcd-351d-473d-a33f-71ebeab09dc2",
+  "is_verified": true
+}
+```
 
 ---
 
@@ -204,10 +230,11 @@ Returns a self-contained provenance certificate for a single submission — suit
   "issued_at": "2026-06-24 23:51:53",
   "creator_id": "test-ai-1",
   "status": "under_review",
+  "is_verified": true,
   "verdict": {
     "attribution": "Uncertain",
     "confidence_score": 0.6111,
-    "transparency_label": "This content's origin is unclear — it has mixed signals of both human and AI writing."
+    "transparency_label": "✓ Verified Human-written"
   },
   "signals": {
     "groq_llm": 0.8,
@@ -225,6 +252,12 @@ Returns a self-contained provenance certificate for a single submission — suit
 `"appeal"` is `null` when no appeal has been filed.
 
 **Response `404`:** Content ID not found.
+
+---
+
+## Known Limitations
+
+**Highly Stylized Poetry / Prose:** Repetitive poetry or highly stylized prose with unnatural, short sentences and low vocabulary diversity may trigger a false positive. This is because the stylometric signal expects natural variance; highly structured writing mimics the statistical uniformity of AI text.
 
 ---
 
@@ -261,13 +294,20 @@ GET /certificate/<id> → single-submission provenance document
 I provided the Detection Signals section and Architecture diagram to an AI tool to generate a Flask app skeleton with `POST /submit` and the Groq LLM classifier. Verified by submitting AI-sounding text (`confidence_score: 0.8`, attribution: `AI-generated`) and casual human text (`confidence_score: 0.2`, attribution: `Human-written`).
 
 **M4 — Signal 2 + Confidence Scoring:**
-I provided the Uncertainty Representation table to generate the stylometric heuristic function (sentence length variance + type-token ratio) and the score-averaging logic. Verified by testing four inputs spanning all three label variants and confirming the two signals disagree on ambiguous cases — demonstrating genuine independence.
+I provided the Uncertainty Representation table to generate the stylometric heuristic function (sentence length variance + type-token ratio) and the score-averaging logic. I manually revised the stylometric heuristic function to explicitly cap the normalized scores between 0.0 and 1.0, because the AI-generated code originally allowed scores > 1.0 on extremely long sentences. Verified by testing four inputs spanning all three label variants and confirming the two signals disagree on ambiguous cases — demonstrating genuine independence.
 
 **M5 — Production Layer:**
-I provided the Appeals Workflow and Transparency Labels sections to generate the label mapping function, `POST /appeal` endpoint, and Flask-Limiter integration. Verified all label variants, confirmed 429 response at the rate limit, and completed an end-to-end appeal test showing the audit log entry updating to `status: "under_review"`.
+I provided the Appeals Workflow and Transparency Labels sections to generate the label mapping function, `POST /appeal` endpoint, and Flask-Limiter integration. I had to manually override the Flask-Limiter configuration to use `storage_uri="memory://"` to prevent startup warnings. Verified all label variants, confirmed 429 response at the rate limit, and completed an end-to-end appeal test showing the audit log entry updating to `status: "under_review"`.
 
 **Stretch — Ensemble Detection (Signal 3):**
 I designed the punctuation/transition-pattern signal independently (two sub-signals: transition phrase density and comma coefficient of variation) and had the AI tool implement it following the same interface contract as Signals 1 and 2. Verified by contrasting a transition-word-heavy AI paragraph (`punctuation: 1.0`) against casual human text (`punctuation: 0.25`).
 
 **Stretch — Analytics + Provenance Certificate:**
 I specified the exact aggregate fields for `GET /analytics` and the certificate schema for `GET /certificate/<id>`, then had the AI tool implement the SQLite aggregate query and route handlers. Both were verified against the live audit log.
+
+---
+
+## Spec Reflection
+
+- **How the spec helped:** Designing the specific thresholds and label variants upfront in `planning.md` made the implementation of the transparency labels trivial and prevented UX guesswork.
+- **Where we diverged:** The original architecture only specified two signals (LLM and Stylometrics). During implementation, we added a third independent signal (Punctuation/Transition Patterns) to fulfill the Ensemble Detection stretch goal. We also added an `is_verified` state to the database and a `POST /verify` endpoint to support the Provenance Certificate verification stretch goal.

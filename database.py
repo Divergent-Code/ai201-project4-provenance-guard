@@ -26,7 +26,9 @@ def init_db():
             appeal_reasoning    TEXT,
             appeal_type         TEXT,
             contact_email       TEXT,
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            is_verified BOOLEAN DEFAULT 0,
+            content_type TEXT DEFAULT 'text'
         )
     """)
     try:
@@ -35,6 +37,14 @@ def init_db():
         pass
     try:
         conn.execute("ALTER TABLE submissions ADD COLUMN signal3_score REAL")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE submissions ADD COLUMN is_verified BOOLEAN DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE submissions ADD COLUMN content_type TEXT DEFAULT 'text'")
     except Exception:
         pass
     conn.commit()
@@ -46,10 +56,10 @@ def insert_submission(record: dict):
     conn.execute("""
         INSERT INTO submissions
             (id, creator_id, text, signal1_score, signal2_score, signal3_score,
-             combined_score, attribution, label, status)
+             combined_score, attribution, label, status, is_verified, content_type)
         VALUES
             (:id, :creator_id, :text, :signal1_score, :signal2_score, :signal3_score,
-             :combined_score, :attribution, :label, :status)
+             :combined_score, :attribution, :label, :status, :is_verified, :content_type)
     """, record)
     conn.commit()
     conn.close()
@@ -69,12 +79,24 @@ def update_appeal(content_id: str, reasoning: str, appeal_type: str, contact_ema
     conn.close()
 
 
+def update_verification(content_id: str):
+    conn = get_db()
+    conn.execute("""
+        UPDATE submissions
+        SET is_verified = 1
+        WHERE id = ?
+    """, (content_id,))
+    conn.commit()
+    conn.close()
+
+
 def fetch_log(limit: int = 50):
     conn = get_db()
     rows = conn.execute("""
         SELECT id, creator_id, signal1_score, signal2_score, signal3_score,
                combined_score, attribution, label, status,
-               appeal_reasoning, appeal_type, contact_email, created_at
+               appeal_reasoning, appeal_type, contact_email, created_at,
+               is_verified, content_type
         FROM submissions
         ORDER BY created_at DESC
         LIMIT ?
