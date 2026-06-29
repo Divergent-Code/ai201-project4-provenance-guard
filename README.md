@@ -35,16 +35,19 @@ Provenance Guard combines three independent signals into a single confidence sco
 
 ### Signal 1 — Groq LLM (Semantic)
 Sends the text to `llama-3.3-70b-versatile` with a structured prompt asking it to score how AI-like the text reads. Focuses on semantic coherence uniformity, formulaic phrasing, absence of personal voice, and structural repetition. `temperature=0.1` for consistent scoring.
+**What it misses:** The LLM may incorrectly flag highly formal or formulaic human writing (e.g., legal texts or academic papers) as AI-generated because they mimic the semantic coherence uniformity of AI output.
 
 ### Signal 2 — Stylometric Heuristics (Structural)
 Two sub-signals averaged together:
 - **Sentence length variance** — AI text has unnaturally uniform sentence lengths (low standard deviation). Normalized so `std=0 → 1.0`, `std≥20 → 0.0`.
 - **Type-token ratio (TTR)** — AI text reuses vocabulary more predictably. Score = `1.0 - (unique_tokens / total_tokens)`.
+**What it misses:** This structural signal may incorrectly flag human writing that has been heavily edited for uniformity or brevity, as these edits artificially reduce natural variance.
 
 ### Signal 3 — Punctuation & Transition Patterns (Ensemble)
 Two sub-signals averaged together:
 - **Transition phrase density** — AI text overuses discourse connectives ("however", "therefore", "furthermore", etc.). Normalized so ≥0.5 connectives per sentence → `1.0`.
 - **Comma consistency** — AI text places commas with metronomic regularity. Measured as `1.0 - coefficient_of_variation` of comma counts across sentences.
+**What it misses:** This signal may over-flag academic or persuasive human writing that legitimately relies on frequent transition words to build arguments.
 
 ### Confidence Score → Transparency Label
 
@@ -53,6 +56,9 @@ Two sub-signals averaged together:
 | > 0.70 | AI-generated | "This content shows strong indicators of AI generation based on its style and structure." |
 | 0.30 – 0.70 | Uncertain | "This content's origin is unclear — it has mixed signals of both human and AI writing." |
 | < 0.30 | Human-written | "This content shows strong indicators of human authorship." |
+
+**Validation of Confidence Scoring:**
+To ensure confidence scores reflect genuine uncertainty and do not cluster artificially around 0.5, scoring was validated against diverse inputs. Clearly AI-generated text (highly uniform, transition-heavy) reliably scores >0.70. Casual human text with high vocabulary diversity scores <0.30. Borderline cases, such as formal human writing or lightly edited AI output, fall into the 0.30–0.70 "Uncertain" band, demonstrating that the thresholds correctly isolate ambiguous cases.
 
 ---
 
@@ -288,7 +294,7 @@ GET /certificate/<id> → single-submission provenance document
 
 ---
 
-## AI Tool Plan
+## AI Tool Plan & Usage
 
 **M3 — Submission Endpoint + Signal 1:**
 I provided the Detection Signals section and Architecture diagram to an AI tool to generate a Flask app skeleton with `POST /submit` and the Groq LLM classifier. Verified by submitting AI-sounding text (`confidence_score: 0.8`, attribution: `AI-generated`) and casual human text (`confidence_score: 0.2`, attribution: `Human-written`).
