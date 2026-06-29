@@ -1,5 +1,13 @@
 # Provenance Guard
 
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+![Flask](https://img.shields.io/badge/flask-REST_API-green.svg)
+![Groq](https://img.shields.io/badge/Groq-llama--3.3--70b-orange.svg)
+![CodePath](https://img.shields.io/badge/CodePath-A210-blueviolet.svg)
+![Provenance](https://img.shields.io/badge/Provenance-Content_Attribution-ff69b4.svg)
+![AI Detection](https://img.shields.io/badge/AI_Detection-Multi--Signal-success.svg)
+![Trust & Safety](https://img.shields.io/badge/Trust_&_Safety-Content_Classification-critical.svg)
+
 A Flask REST API that classifies submitted text as AI-generated or human-written using three independent detection signals, issues transparency labels, enforces rate limiting, and maintains a structured audit log with an appeals workflow.
 
 ---
